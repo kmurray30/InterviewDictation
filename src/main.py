@@ -106,16 +106,16 @@ def identify_names_of_speakers(transcript):
     time.sleep(5)
     speakerLabelsToIdentify = identify_speakers(transcript)
     speakerNameMap = {}
-    for utterance in transcript.utterances:
-        if not speakerLabelsToIdentify:
-            break
-        if utterance.speaker in speakerLabelsToIdentify:
-            realName = input(f"Who said:\n\"{utterance.text}\"\n")
-            if realName:
-                speakerNameMap[utterance.speaker] = realName
-                speakerLabelsToIdentify.remove(utterance.speaker)
-            print()
-    return speakerNameMap
+    while True:
+        for utterance in transcript.utterances:
+            if not speakerLabelsToIdentify:
+                return speakerNameMap
+            if utterance.speaker in speakerLabelsToIdentify:
+                realName = input(f"Who said:\n\"{utterance.text}\"\n")
+                if realName:
+                    speakerNameMap[utterance.speaker] = realName
+                    speakerLabelsToIdentify.remove(utterance.speaker)
+                print()
 
 def replace_speaker_labels_with_names(transcript):
     # Replace the speaker labels with the names
