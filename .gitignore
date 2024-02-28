@@ -1,0 +1,5 @@
+Recordings/
+.venv
+.DS_Store
+.env
+src/out/
