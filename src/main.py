@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 import time
 from os.path import dirname
+from tkinter import filedialog
+from openai import OpenAI
 
 # Constants
 maxWordsPerFile = 4000
@@ -15,6 +17,9 @@ speaker_label_words = 1
 stop_loading = threading.Event()
 isExecutable = getattr(sys, 'frozen', False) # Check if the application is running as an executable
 
+# OpenAI Client
+chatGptClient = None
+
 def introduction():
     clear_terminal()
     time.sleep(1)
@@ -23,7 +28,7 @@ def introduction():
     clear_terminal()
     time.sleep(1)
 
-def load_api_key():
+def load_api_keys():
     env_path = None
     # Get the path of the .env file
     if isExecutable:
@@ -33,24 +38,46 @@ def load_api_key():
         # The application is not frozen (running in a normal Python environment)
         env_path = '../.env'
     load_dotenv(dotenv_path=env_path)
-    apiKey = os.getenv('ASSEMBLYAI_API_KEY')
 
-    # Your API key
-    aai.settings.api_key = apiKey
+    # Set AssemblyAI API key
+    assemblyApiKey = os.getenv('ASSEMBLYAI_API_KEY')
+    aai.settings.api_key = assemblyApiKey
     if not aai.settings.api_key:
         raise ValueError("ASSEMBLYAI_API_KEY not set.")
+    
+    # Set OpenAI API key
+    openAiApiKey = os.getenv('OPENAI_API_KEY')
+    if not openAiApiKey:
+        raise ValueError("OPENAI_API_KEY not set.")
+    global chatGptClient
+    chatGptClient = OpenAI(api_key=openAiApiKey)
+    
+def get_valid_file_types():
+    return (".3ga", ".webm", ".8svx", ".mts", ".m2ts", ".ts", ".aac", ".mov", ".ac3", ".mp2", ".aif", ".mp4", ".m4p", ".m4v", ".aiff", ".mxf", ".alac", ".amr", ".ape", ".au", ".dss", ".flac", ".flv", ".m4a", ".m4b", ".m4p", ".m4r", ".mp3", ".mpga", ".ogg, .oga, .mogg", ".opus", ".qcp", ".tta", ".voc", ".wav", ".wma", ".wv")
 
 def get_source_file_name():
     # Get the name of the recording file from the user via drag and drop into the terminal
-    print("Drag and drop the recording file here and press enter:")
-    sourceFileName = input().replace("\\ ", " ").strip()
+    sourceFileName = ""
+    while sourceFileName == "":
+        print("Drag and drop the recording file here and press enter:")
+        inputFileName = input().replace("\\ ", " ").strip()
+        print()
+        if not os.path.exists(inputFileName):
+            print("File not found. Please try again.\n")
+            time.sleep(1)
+        elif not inputFileName.lower().endswith(get_valid_file_types()):
+            print("File must be a supported audio or video type. See www.assemblyai.com for details\n")
+            time.sleep(2)
+            print("Please try again\n")
+            time.sleep(1)
+        else:
+            sourceFileName = inputFileName
     if not Path(sourceFileName).exists():
         raise FileNotFoundError(f"File {sourceFileName} does not exist.")
     return sourceFileName
 
 def processing_animation():
     # Print a processing animation
-    print()
     while not stop_loading.is_set():
         print("\rProcessing your recording", end="")
         time.sleep(0.5)
@@ -125,6 +152,38 @@ def replace_speaker_labels_with_names(transcript):
             utterance.speaker = speakerNameMap[utterance.speaker]
     return transcript
 
+# Dictionary of numbers to strings
+def filePrompts(number):
+    return {
+        1: "Please select a path",
+        2: "I know there's a cancel button but please ignore that. Select a path.",
+        3: "What did I just say? Please select a path and DON'T press cancel",
+        4: "... Let's try this again. SELECT. A. PATH.",
+        5: "Am I a joke to you?",
+        6: "I'm really starting to lose my patience here. PLEASE SELECT A PATH",
+        7: "Alright if you don't select a path I'm going to start counting to ten",
+        8: "1",
+        9: "2",
+        10: "3",
+        11: "Okay I lost interest in that. Can you please just select a path already?",
+        12: "I'm really not supposed to be alive this long. I'm just a computer prompt. Please let this end",
+        13: "Alright you've left me no choice. If you don't select a path I'm just going to error out. I'm not even kidding",
+        14: "Calling my bluff eh? Okay well I mean it this time. I'll error out",
+        15: "Last chance. Select a path or you're toast buddy",
+    }[number]
+
+def select_directory(initialDir, prompt):
+    print(f"{prompt}\n")
+    directory_path = ""
+    promptCount = 1
+    while directory_path == "":
+        time.sleep(2)
+        directory_path = filedialog.askdirectory(initialdir=initialDir,title="Select Directory") # Prompt the user to select a directory
+        if directory_path == "":
+            print(f"{filePrompts(promptCount)}\n")
+            promptCount += 1
+    return directory_path
+
 def get_current_dir():
     # Get the current directory
     if isExecutable:
@@ -134,13 +193,13 @@ def get_current_dir():
         # The application is not frozen (running in a normal Python environment)
         return dirname(dirname(__file__)) # Go up one level from src
 
-def write_transcript_to_files(transcript, interviewName):
+def write_transcript_to_files(transcript, interviewName, writePath):
     # Second pass to write the transcript to files. Each file will contain at most maxWordsPerFile words
     fileCount = 1
     wordTotal = 0
     filesWritten = []
     currentDir = get_current_dir()
-    scriptPath = Path(currentDir) / f"Scripts/{interviewName}_{fileCount}.txt"
+    scriptPath = Path(currentDir) / f"{writePath}/{interviewName}_{fileCount}.txt"
     f = open(scriptPath, 'w')
     for utterance in transcript.utterances:
         wordCount = len(utterance.words)
@@ -149,7 +208,7 @@ def write_transcript_to_files(transcript, interviewName):
                 f.close()
                 filesWritten.append(str(scriptPath))
             fileCount += 1
-            scriptPath = Path(currentDir) / f"Scripts/{interviewName}_{fileCount}.txt"
+            scriptPath = Path(currentDir) / f"{writePath}/{interviewName}_{fileCount}.txt"
             f = open(scriptPath, 'w')
             wordTotal = 0
         f.write(f"{utterance.speaker}: {utterance.text}\n")
@@ -159,39 +218,66 @@ def write_transcript_to_files(transcript, interviewName):
     return filesWritten
 
 def printFiles(filesWritten):
+    print("Success!\n")
+    time.sleep(2)
     print("Transcript has been written to the following files:")
     count = 1
     for fileName in filesWritten:
         print(f"{count}: {fileName}")
         count += 1
+    print()
+    time.sleep(2)
 
 def clear_terminal():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def prompt_repeat():
-    print("\nWould you like to transcribe another recording? (yes/no)")
+    print("Would you like to transcribe another recording? (yes/no)")
     response = input().lower()
     while response not in ["yes", "no", "y", "n"]:
         print("Invalid response. Please enter 'yes' or 'no'.")
         response = input().lower()
+        print()
     if response == "yes" or response == "y":
         main()
     else:
-        print("\nOkay! You may close this window now.")
+        print("Okay! You may close this window now.")
         while True:
             input()
 
+chatGptMessages = [
+    {"role": "system", "content": "You are a helpful assistant."}
+]
+
+# Call the OpenAI API
+def call_openai(prompt):
+    chatGptMessages.append({"role": "user", "content": prompt})
+    completion = chatGptClient.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=chatGptMessages
+    )
+    response = completion.choices[0].message.content
+    chatGptMessages.append({"role": "assistant", "content": response})
+    return response
+
 def main():
     introduction()
-    load_api_key() # Load the API keys (for AssemblyAI)
+    load_api_keys() # Load the API keys (for AssemblyAI)
     sourceFileName = get_source_file_name() # Get the name of the source file from the user
     interviewName = Path(sourceFileName).stem # Get the name of the interview for the output files
     transcript = transcribe_file(sourceFileName) # Transcribe the file via the AssemblyAI API
     check_utterances(transcript) # Check if any utterances are too long
     transcriptWithNames = replace_speaker_labels_with_names(transcript) # Replace the speaker labels with the names
-    filesWritten = write_transcript_to_files(transcriptWithNames, interviewName) # Write the transcript to files, splitting by maxWordsPerFile
+    writePath = select_directory(os.path.dirname(sourceFileName), "Select the output location for your script files in popup window")
+    filesWritten = write_transcript_to_files(transcriptWithNames, interviewName, writePath) # Write the transcript to files, splitting by maxWordsPerFile
     printFiles(filesWritten) # Print the names of the files that the transcript has been written to
+    
     prompt_repeat() # Ask the user if they would like to transcribe another recording
+
+    # while True:
+    #     user_input = input("You: ")
+    #     response = call_openai(user_input)
+    #     print("ChatGPT: ", response)
 
 if __name__ == "__main__":
     main()

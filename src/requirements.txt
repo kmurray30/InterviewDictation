@@ -1,0 +1,4 @@
+assemblyai
+python-dotenv
+tk
+openai

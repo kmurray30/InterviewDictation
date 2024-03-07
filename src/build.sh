@@ -1,6 +1,10 @@
 #!/bin/bash
+
+# Set dir
+cd "$(dirname "$0")"
+
 # Define
-appName="ClickMe"
+appName="InterviewDictator"
 
 # Clean
 rm ../$appName
